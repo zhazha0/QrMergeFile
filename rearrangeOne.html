@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>重整单次完整文本</title>
+    <script src="https://unpkg.com/vconsole@latest/dist/vconsole.min.js"></script>
+    <script>
+        // VConsole 默认会挂载到 `window.VConsole` 上
+        var vConsole = new window.VConsole();
+    </script>
+    <style>
+        .keep-format {
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <button id="pasteButton">点击读取剪贴板内容</button>
+
+    <!-- 回显消息 -->
+    <div id="message" class="echo-message"></div>
+
+    <!-- 文本 -->
+    <div id="all-text" class="all-text keep-format"></div>
+
+    <script>
+
+
+        let allTextDom = document.getElementById('all-text')
+        let messageDom = document.getElementById('message')
+
+        document.getElementById('pasteButton').addEventListener('click', async () => {
+            try {
+                // 使用异步 API 读取剪贴板内容
+                getAndRearrangeText()
+            } catch (err) {
+                console.error('无法读取剪贴板内容: ', err);
+            }
+        });
+
+
+
+        document.addEventListener('visibilitychange', function () {
+            if (document.hidden) {
+                console.log('页面已隐藏');
+            } else {
+                console.log('页面已可见');
+                getAndRearrangeText()
+            }
+        });
+
+        async function getAndRearrangeText() {
+            try {
+                const text = await getClipboardText();
+                allTextDom.textContent = `剪贴板内容: \n ${text}`;
+
+                let rearrangedTextArray = rearrangeText(text)
+                let rearrangedText = rearrangedTextArray.join('')
+
+                checkIntegraty(rearrangedText)
+            } catch (err) {
+                console.error('无法读取剪贴板内容: ', err);
+            }
+        }
+        async function getClipboardText() {
+            const text = await navigator.clipboard.readText();
+            return text
+        }
+
+        function rearrangeText(text) {
+            if (!text) return
+
+            let allFragments = []
+            let regex = /@\d+@/g
+            let endRegex = /@e@/
+
+            let spliters = text.match(regex)
+            let fragments = text.split(regex)
+
+            for (let i = 0; i < spliters.length; i++) {
+                let spliter = spliters[i]
+                let index = spliter.slice(1, -1)
+                let fragment = fragments[i + 1]
+                let endMatch = fragment.match(endRegex)
+                if (endMatch) {
+                    fragment = fragment.slice(0, endMatch.index)
+                }
+                allFragments[index] = fragment
+            }
+            console.log('allFragments', allFragments)
+            return allFragments
+        }
+
+        async function checkIntegraty(text) {
+            if (!text) return
+
+            let regex = /\[[0-9a-zA-Z]{64}\]/
+            let hashMatch = text.match(regex)
+            let hashCode
+            let content
+
+            if (hashMatch) {
+                hashCode = hashMatch[0]
+                content = text.slice(0, hashMatch.index)
+                hashCode = hashCode.slice(1, -1)
+                let hashToCheck = await calculateHash(content)
+                if (hashCode === hashToCheck) {
+                    messageDom.innerHTML = `文本完整性校验成功，下载文件`
+                    // 提取头部文件名
+                    let filename = content.match(/^\[(.*)\]/)[1]
+                    // 去掉[文件名]
+                    let fileText = content.slice(filename.length + 2)
+                    createFile(fileText, filename)
+                } else {
+                    messageDom.textContent = `文本完整性校验失败，请重新复制`
+                    // 提取头部文件名
+                    let filename = content.match(/^\[(.*)\]/)[1]
+                    // 去掉[文件名]
+                    let fileText = content.slice(filename.length + 2)
+                    createFile(fileText, filename)
+                }
+            }
+        }
+
+
+        function createFile(textContent, filename) {
+            const blob = new Blob([textContent], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+
+            // 创建下载链接
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            // 释放URL
+            URL.revokeObjectURL(url);
+        }
+        // createFile使用示例
+        // createFile("这是文件的内容", "example.txt");
+
+        async function calculateHash(text) {
+            const encoder = new TextEncoder();
+            const data = encoder.encode(text);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+        // calculateHash使用示例
+        // const text = "这是需要校验的文本";
+        // calculateHash(text).then(hash => console.log(hash));
+
+    </script>
+</body>
+
+</html>
